@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { startTransition, useEffect, useRef, useState } from "react";
 import { Schema } from "effect";
 import { useLiveQuery } from "@tanstack/react-db";
+import { Popover } from "@base-ui/react/popover";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import {
@@ -86,7 +87,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!session?.guest || !navigator.mediaDevices?.getUserMedia) return;
+    if (!session?.guest || view !== "camera" || !navigator.mediaDevices?.getUserMedia) return;
     let cancelled = false;
 
     navigator.mediaDevices
@@ -108,7 +109,7 @@ export function App() {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     };
-  }, [session?.guest?.id]);
+  }, [session?.guest?.id, view]);
 
   const reconcileUploads = async () => {
     for (const delay of [900, 1500, 2500, 4000]) {
@@ -227,22 +228,22 @@ export function App() {
           playsInline
         />
         <div className="absolute inset-0 bg-black/25" />
-        <header className="z-10 grid grid-cols-[1fr_auto] items-center gap-4 p-4 text-xs font-black uppercase tracking-[0.12em] text-amber-50/80 md:grid-cols-[1fr_auto_1fr] md:p-6">
-          <div>
-            <span className="mr-2 inline-block size-2.5 rounded-full bg-red-500 shadow-[0_0_18px_#ef4444]" />
-            Live wedding roll
-          </div>
+        <header className="z-10 grid grid-cols-[1fr_auto] items-center gap-4 p-4 md:grid-cols-[1fr_auto_1fr] md:p-6">
           <Button
-            className="justify-self-end md:col-start-3"
+            className="justify-self-start"
             variant="ghost"
             type="button"
-            onClick={async () => {
+            onClick={() => setView("gallery")}
+          >
+            Gallery
+          </Button>
+          <UserMenu
+            name={session.guest.name}
+            onSignOut={async () => {
               await requestJson(OkResponse, "/api/logout", { method: "POST" });
               setSession({ guest: null, eventCode: queryCode(), maxPhotos: 20 });
             }}
-          >
-            Sign out
-          </Button>
+          />
         </header>
 
         <div className="pointer-events-none absolute inset-[18%_10%_34%] border border-white/20 md:inset-[22%_22%_28%]">
@@ -310,7 +311,14 @@ export function App() {
             </Button>
           </motion.div>
 
-          <PhotoStack photos={personalPhotos} onOpen={() => setView("gallery")} />
+          <Button
+            className="size-16 justify-self-end rounded-full border border-white/20 bg-stone-950 p-0 text-[0.68rem] uppercase tracking-wide text-white shadow-lg md:size-20"
+            type="button"
+            disabled={busy || remaining === 0}
+            onClick={() => inputRef.current?.click()}
+          >
+            Upload
+          </Button>
         </footer>
       </section>
       <AnimatePresence>
@@ -550,45 +558,39 @@ function Field({
   );
 }
 
-function PhotoStack({
-  photos,
-  onOpen,
-}: {
-  photos: ReadonlyArray<GalleryPhoto>;
-  onOpen: () => void;
-}) {
+function UserMenu({ name, onSignOut }: { name: string; onSignOut: () => Promise<void> }) {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
   return (
-    <button
-      className="relative h-36 w-28 justify-self-end rounded-md text-left md:h-44 md:w-36"
-      type="button"
-      onClick={onOpen}
-      aria-label="Open your photo stack"
-    >
-      {photos.length === 0 ? (
-        <span className="grid h-full place-items-center rounded-md border border-white/20 bg-stone-950 px-3 text-center font-serif text-sm font-black text-white/70">
-          Your stack
-        </span>
-      ) : (
-        photos.slice(0, 3).map((photo, index) => (
-          <motion.span
-            className="absolute inset-0 rounded-md bg-amber-50 p-2 pb-6 shadow-2xl"
-            key={photo.id}
-            initial={{ opacity: 0, y: 12, rotate: 0 }}
-            animate={{ opacity: 1, y: index * -7, rotate: [-5, 3, -1][index] ?? 0 }}
-            style={{ zIndex: 3 - index }}
-          >
-            <img
-              className="size-full rounded-sm object-cover"
-              src={photo.url}
-              alt={photo.filename}
-            />
-          </motion.span>
-        ))
-      )}
-      <span className="absolute -bottom-9 right-0 rounded-full bg-white px-3 py-1 text-xs font-black text-stone-950 shadow-lg">
-        Gallery {photos.length}
-      </span>
-    </button>
+    <Popover.Root>
+      <Popover.Trigger className="grid size-11 justify-self-end rounded-full bg-white font-black text-stone-950 shadow-lg md:col-start-3">
+        {initials || "U"}
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="bottom" align="end" sideOffset={10}>
+          <Popover.Popup className="grid min-w-48 gap-2 rounded-2xl border border-stone-200 bg-white p-2 text-stone-950 shadow-xl outline-none">
+            <div className="px-3 py-2">
+              <p className="text-xs font-black uppercase tracking-wide text-stone-500">
+                Signed in as
+              </p>
+              <p className="font-black">{name}</p>
+            </div>
+            <button
+              className="rounded-xl px-3 py-2 text-left font-black text-red-700 transition hover:bg-red-50"
+              type="button"
+              onClick={() => void onSignOut()}
+            >
+              Sign out
+            </button>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
