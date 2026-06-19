@@ -21,6 +21,7 @@ export const upsertGalleryPhoto = (photo: GalleryPhoto) => {
     void waitFor(
       galleryCollection.update(photo.id, (draft) => {
         Object.assign(draft, photo);
+        if (!photo.uploadState) delete draft.uploadState;
       }),
     );
     return;
@@ -39,19 +40,8 @@ export const addPendingPhotos = (photos: ReadonlyArray<GalleryPhoto>) => {
 
 export const syncServerPhotos = (serverPhotos: ReadonlyArray<PhotoDto>) => {
   const serverKeys = new Set(serverPhotos.map((photo) => photo.id));
-  const pendingPhotos = [...galleryCollection.state.values()].filter(
-    (photo) => photo.uploadState === "pending",
-  );
-
   for (const photo of serverPhotos) {
     upsertGalleryPhoto(photo);
-  }
-
-  for (const pending of pendingPhotos) {
-    const landed = serverPhotos.some(
-      (photo) => photo.filename === pending.filename && photo.size === pending.size && photo.isMine,
-    );
-    if (landed) removeGalleryPhoto(pending.id);
   }
 
   for (const photo of galleryCollection.state.values()) {

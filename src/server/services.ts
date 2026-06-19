@@ -23,6 +23,8 @@ const normalizeCode = (code: string) =>
     .replace(/[^a-zA-Z0-9-]/g, "")
     .toUpperCase()
     .trim();
+const normalizeUploadId = (id: string | undefined) =>
+  id && /^[a-zA-Z0-9_-]{8,80}$/.test(id) ? id : nanoid();
 
 const randomRoomCode = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
@@ -115,7 +117,7 @@ export const makeServices = (repo: Repositories) => ({
       const uploaded = yield* repo.photos.countByGuest(guestId);
       return Math.max(0, MAX_PHOTOS_PER_GUEST - uploaded);
     }),
-  preparePhotos: (guest: Guest, files: File[]) =>
+  preparePhotos: (guest: Guest, files: File[], clientIds: string[]) =>
     Effect.gen(function* () {
       if (files.length === 0) return yield* Effect.fail(new AppError("Choose at least one photo."));
       const uploaded = yield* repo.photos.countByGuest(guest.id);
@@ -126,7 +128,7 @@ export const makeServices = (repo: Repositories) => ({
       }
 
       const prepared: PreparedUpload[] = [];
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
         const contentType = file.type.toLowerCase().split(";")[0] ?? "";
         if (!contentType.startsWith("image/"))
           return yield* Effect.fail(new AppError("Please upload image files only."));
@@ -143,7 +145,7 @@ export const makeServices = (repo: Repositories) => ({
           );
         }
 
-        const id = nanoid();
+        const id = normalizeUploadId(clientIds[index]);
         const safeName = (file.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "photo").slice(0, 120);
         const objectKey = `${guest.id}/${id}-${safeName}`;
         prepared.push({ id, objectKey, filename: file.name, contentType, size: file.size, buffer });

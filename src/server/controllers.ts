@@ -134,8 +134,12 @@ export const createApp = () => {
       const files = form
         .getAll("photos")
         .filter((item): item is File => typeof item !== "string" && item.size > 0);
+      const clientIdsValue = form.get("clientIds");
+      const clientIds = JSON.parse(
+        typeof clientIdsValue === "string" ? clientIdsValue : "[]",
+      ) as string[];
       const services = getServices(c);
-      const { remaining, prepared } = await run(services.preparePhotos(guest, files));
+      const { remaining, prepared } = await run(services.preparePhotos(guest, files, clientIds));
       c.executionCtx.waitUntil(
         run(services.completePreparedPhotos(guest, prepared)).catch((error) => {
           console.error("Background photo upload failed", error);

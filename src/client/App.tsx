@@ -42,6 +42,7 @@ const queryCode = () => new URLSearchParams(window.location.search).get("code") 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [tab, setTab] = useState<Tab>("all");
+  const [view, setView] = useState<"camera" | "gallery">("camera");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +57,9 @@ export function App() {
   }
 
   const remaining = session?.remaining ?? session?.maxPhotos ?? 20;
+  const personalPhotos = [...photos]
+    .filter((photo) => photo.isMine)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const visiblePhotos = [
     ...(tab === "personal" ? photos.filter((photo) => photo.isMine) : photos),
   ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
@@ -123,7 +127,7 @@ export function App() {
       const body = new FormData();
       const fileArray = [...files];
       pendingPhotos = fileArray.map((file) => ({
-        id: `pending-${crypto.randomUUID()}`,
+        id: crypto.randomUUID(),
         guestName: session?.guest?.name ?? "You",
         filename: file.name,
         size: file.size,
@@ -134,6 +138,7 @@ export function App() {
       }));
       addPendingPhotos(pendingPhotos);
       fileArray.forEach((file) => body.append("photos", file));
+      body.append("clientIds", JSON.stringify(pendingPhotos.map((photo) => photo.id)));
       await requestJson(UploadResponse, "/api/upload", { method: "POST", body });
       void reconcileUploads();
     } catch (caught) {
@@ -195,6 +200,20 @@ export function App() {
 
   if (!session.guest) {
     return <Login initialCode={session.eventCode || queryCode()} onLogin={setSession} />;
+  }
+
+  if (view === "gallery") {
+    return (
+      <GalleryView
+        tab={tab}
+        photos={visiblePhotos}
+        allCount={photos.length}
+        personalCount={personalPhotos.length}
+        onBack={() => setView("camera")}
+        onRemove={removePhoto}
+        onTabChange={setTab}
+      />
+    );
   }
 
   return (
@@ -291,16 +310,7 @@ export function App() {
             </Button>
           </motion.div>
 
-          <GalleryTray
-            tab={tab}
-            photos={visiblePhotos}
-            personalCount={photos.filter((photo) => photo.isMine).length}
-            allCount={tab === "all" ? photos.length : visiblePhotos.length}
-            onTabChange={(nextTab) => {
-              setTab(nextTab);
-            }}
-            onRemove={removePhoto}
-          />
+          <PhotoStack photos={personalPhotos} onOpen={() => setView("gallery")} />
         </footer>
       </section>
       <AnimatePresence>
@@ -540,11 +550,59 @@ function Field({
   );
 }
 
-function GalleryTray({
+function PhotoStack({
+  photos,
+  onOpen,
+}: {
+  photos: ReadonlyArray<GalleryPhoto>;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      className="relative h-36 w-28 justify-self-end rounded-md text-left md:h-44 md:w-36"
+      type="button"
+      onClick={onOpen}
+      aria-label="Open your photo stack"
+    >
+      {photos.length === 0 ? (
+        <span className="grid h-full place-items-center rounded-md border border-white/20 bg-stone-950 px-3 text-center font-serif text-sm font-black text-white/70">
+          Your stack
+        </span>
+      ) : (
+        photos.slice(0, 3).map((photo, index) => (
+          <motion.span
+            className="absolute inset-0 rounded-md bg-amber-50 p-2 pb-6 shadow-2xl"
+            key={photo.id}
+            initial={{ opacity: 0, y: 12, rotate: 0 }}
+            animate={{ opacity: 1, y: index * -7, rotate: [-5, 3, -1][index] ?? 0 }}
+            style={{ zIndex: 3 - index }}
+          >
+            <img
+              className="size-full rounded-sm object-cover"
+              src={photo.url}
+              alt={photo.filename}
+            />
+            {photo.uploadState === "pending" ? (
+              <span className="absolute bottom-2 left-2 text-[0.62rem] font-black uppercase tracking-wide text-stone-950/55">
+                Saving
+              </span>
+            ) : null}
+          </motion.span>
+        ))
+      )}
+      <span className="absolute -bottom-9 right-0 rounded-full bg-white px-3 py-1 text-xs font-black text-stone-950 shadow-lg">
+        Gallery {photos.length}
+      </span>
+    </button>
+  );
+}
+
+function GalleryView({
   tab,
   photos,
   personalCount,
   allCount,
+  onBack,
   onTabChange,
   onRemove,
 }: {
@@ -552,62 +610,94 @@ function GalleryTray({
   photos: ReadonlyArray<GalleryPhoto>;
   personalCount: number;
   allCount: number;
+  onBack: () => void;
   onTabChange: (tab: Tab) => void;
   onRemove: (photo: GalleryPhoto) => void;
 }) {
   return (
-    <aside className="w-[122px] justify-self-end md:w-[min(330px,32vw)]" aria-label="Gallery">
-      <Tabs value={tab} onValueChange={(value) => onTabChange(value as Tab)}>
-        <TabsList className="mb-3 grid-cols-1 md:grid-cols-2">
-          <TabsTrigger value="all">All {allCount}</TabsTrigger>
-          <TabsTrigger value="personal">Yours {personalCount}</TabsTrigger>
-        </TabsList>
-      </Tabs>
+    <main className="min-h-screen overflow-y-auto bg-stone-100 p-4 text-stone-950 md:p-8">
+      <header className="mx-auto mb-6 flex w-full max-w-6xl items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-stone-500">
+            Wedding roll
+          </p>
+          <h1 className="font-serif text-5xl leading-none md:text-7xl">Gallery</h1>
+        </div>
+        <Button type="button" onClick={onBack}>
+          Camera
+        </Button>
+      </header>
 
-      <div className="grid auto-cols-[108px] grid-flow-col gap-3 overflow-x-auto pb-3 [scrollbar-width:none] md:auto-cols-[minmax(116px,1fr)] [&::-webkit-scrollbar]:hidden">
-        <AnimatePresence initial={false}>
-          {photos.length === 0 ? (
-            <motion.div
-              className="grid min-h-36 place-items-center rounded-md bg-amber-50 p-5 font-serif font-black text-stone-950/60 shadow-2xl md:min-h-40"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              No shots yet
-            </motion.div>
-          ) : (
-            photos.slice(0, 8).map((photo, index) => (
-              <motion.article
-                className="min-h-36 touch-pan-y rounded-md bg-amber-50 p-2 pb-3 text-stone-950 shadow-2xl md:min-h-40"
-                key={photo.id}
-                layout
-                drag={photo.isMine ? "x" : false}
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.35}
-                initial={{ opacity: 0, y: 30, rotate: 5 }}
-                animate={{ opacity: 1, y: 0, rotate: index % 2 === 0 ? -2 : 2 }}
-                exit={{ opacity: 0, x: 180, rotate: 15 }}
-                onDragEnd={(_, info) => {
-                  if (Math.abs(info.offset.x) > 120) onRemove(photo);
-                }}
+      <section className="mx-auto w-full max-w-6xl rounded-[28px] border border-stone-200 bg-white p-4 shadow-sm md:p-6">
+        <Tabs value={tab} onValueChange={(value) => onTabChange(value as Tab)}>
+          <TabsList className="mb-6 max-w-sm">
+            <TabsTrigger value="all">All {allCount}</TabsTrigger>
+            <TabsTrigger value="personal">Yours {personalCount}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          <AnimatePresence initial={false}>
+            {photos.length === 0 ? (
+              <motion.div
+                className="col-span-full grid min-h-64 place-items-center rounded-3xl border border-dashed border-stone-300 p-8 text-center font-serif text-3xl font-black text-stone-950/50"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
               >
-                <img
-                  className="aspect-square w-full rounded-sm object-cover"
-                  src={photo.url}
-                  alt={photo.filename}
-                />
-                <footer className="grid gap-0.5 px-0.5 pt-2 font-serif">
-                  <span className="truncate font-black">{photo.guestName}</span>
-                  <small className="text-[0.68rem] font-black uppercase text-stone-950/55">
-                    {photo.isMine ? "Swipe to toss" : "Guest roll"}
-                  </small>
-                </footer>
-              </motion.article>
-            ))
-          )}
-        </AnimatePresence>
-      </div>
-    </aside>
+                No shots yet
+              </motion.div>
+            ) : (
+              photos.map((photo, index) => (
+                <PolaroidCard key={photo.id} photo={photo} index={index} onRemove={onRemove} />
+              ))
+            )}
+          </AnimatePresence>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function PolaroidCard({
+  photo,
+  index,
+  onRemove,
+}: {
+  photo: GalleryPhoto;
+  index: number;
+  onRemove: (photo: GalleryPhoto) => void;
+}) {
+  return (
+    <motion.article
+      className="touch-pan-y rounded-md bg-amber-50 p-2 pb-4 text-stone-950 shadow-md"
+      layout
+      drag={photo.isMine ? "x" : false}
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.25}
+      initial={{ opacity: 0, y: 20, rotate: 0 }}
+      animate={{ opacity: 1, y: 0, rotate: index % 2 === 0 ? -1.5 : 1.5 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      onDragEnd={(_, info) => {
+        if (Math.abs(info.offset.x) > 120) onRemove(photo);
+      }}
+    >
+      <img
+        className="aspect-square w-full rounded-sm object-cover"
+        src={photo.url}
+        alt={photo.filename}
+      />
+      <footer className="grid gap-0.5 px-0.5 pt-2 font-serif">
+        <span className="truncate font-black">{photo.guestName}</span>
+        <small className="text-[0.68rem] font-black uppercase text-stone-950/55">
+          {photo.uploadState === "pending"
+            ? "Saving"
+            : photo.isMine
+              ? "Swipe to toss"
+              : "Guest roll"}
+        </small>
+      </footer>
+    </motion.article>
   );
 }
 
