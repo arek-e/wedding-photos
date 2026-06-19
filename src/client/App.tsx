@@ -106,11 +106,8 @@ export function App() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-stone-950 p-0 text-amber-50 md:p-5">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_12%,rgba(255,205,127,0.3),transparent_24rem),radial-gradient(circle_at_80%_20%,rgba(180,60,45,0.22),transparent_22rem)]" />
-      <div className="pointer-events-none fixed inset-0 opacity-20 mix-blend-overlay [background-image:linear-gradient(115deg,rgba(255,255,255,0.12)_0_1px,transparent_1px_5px)]" />
-
-      <section className="relative mx-auto grid h-dvh w-full grid-rows-[auto_1fr_auto] overflow-hidden bg-[radial-gradient(circle_at_center,rgba(255,238,198,0.12),transparent_28rem),#151515] shadow-[inset_0_0_90px_rgba(0,0,0,0.8),0_30px_80px_rgba(0,0,0,0.55)] md:h-[calc(100vh-40px)] md:max-w-[1180px] md:rounded-[42px] md:border-[9px] md:border-stone-950">
+    <main className="relative min-h-screen overflow-hidden bg-black p-0 text-stone-50 md:bg-stone-200 md:p-5">
+      <section className="relative mx-auto grid h-dvh w-full grid-rows-[auto_1fr_auto] overflow-hidden bg-black shadow-2xl md:h-[calc(100vh-40px)] md:max-w-[1180px] md:rounded-[36px] md:border-[10px] md:border-stone-950">
         <header className="z-10 grid grid-cols-[1fr_auto] items-center gap-4 p-4 text-xs font-black uppercase tracking-[0.12em] text-amber-50/80 md:grid-cols-[1fr_auto_1fr] md:p-6">
           <div>
             <span className="mr-2 inline-block size-2.5 rounded-full bg-red-500 shadow-[0_0_18px_#ef4444]" />
@@ -129,11 +126,11 @@ export function App() {
           </Button>
         </header>
 
-        <div className="pointer-events-none absolute inset-[18%_10%_34%] border border-amber-50/20 md:inset-[22%_22%_28%]">
-          <span className="absolute -left-px -top-px size-8 border-l-[3px] border-t-[3px] border-amber-50" />
-          <span className="absolute -right-px -top-px size-8 border-r-[3px] border-t-[3px] border-amber-50" />
-          <span className="absolute -bottom-px -left-px size-8 border-b-[3px] border-l-[3px] border-amber-50" />
-          <span className="absolute -bottom-px -right-px size-8 border-b-[3px] border-r-[3px] border-amber-50" />
+        <div className="pointer-events-none absolute inset-[18%_10%_34%] border border-white/20 md:inset-[22%_22%_28%]">
+          <span className="absolute -left-px -top-px size-8 border-l-2 border-t-2 border-white" />
+          <span className="absolute -right-px -top-px size-8 border-r-2 border-t-2 border-white" />
+          <span className="absolute -bottom-px -left-px size-8 border-b-2 border-l-2 border-white" />
+          <span className="absolute -bottom-px -right-px size-8 border-b-2 border-r-2 border-white" />
         </div>
 
         <motion.div
@@ -141,7 +138,7 @@ export function App() {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-amber-300">
+          <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-white/70">
             {session.guest.name}'s camera
           </p>
           <h1 className="font-serif text-[clamp(3rem,11vw,7.8rem)] leading-[0.82] text-balance">
@@ -162,11 +159,11 @@ export function App() {
 
         <footer className="z-10 grid grid-cols-[1fr_auto_1fr] items-end gap-3 p-4 md:p-6">
           <motion.div
-            className="grid min-w-20 grid-cols-[auto_auto] items-end gap-2 justify-self-start rounded-[22px] border border-amber-50/20 bg-black/40 px-3 py-2 backdrop-blur-xl md:min-w-28 md:px-4 md:py-3"
+            className="grid min-w-20 grid-cols-[auto_auto] items-end gap-2 justify-self-start rounded-[22px] border border-white/20 bg-stone-950 px-3 py-2 md:min-w-28 md:px-4 md:py-3"
             layout
             aria-live="polite"
           >
-            <span className="text-[0.68rem] font-black uppercase text-amber-50/60 md:text-xs">
+            <span className="text-[0.68rem] font-black uppercase text-white/55 md:text-xs">
               left
             </span>
             <AnimatePresence mode="popLayout" initial={false}>
@@ -235,10 +232,10 @@ function Admin() {
   }, [createdRoom]);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.24),transparent_28rem),#0c0a09] p-5 text-amber-50">
+    <main className="min-h-screen bg-stone-100 p-5 text-stone-950">
       <section className="mx-auto grid min-h-[calc(100vh-40px)] w-full max-w-5xl items-center gap-8 md:grid-cols-[0.9fr_1.1fr]">
         <motion.form
-          className="grid gap-4 rounded-[32px] border border-amber-50/15 bg-white/8 p-6 shadow-2xl backdrop-blur-xl"
+          className="grid gap-4 rounded-[28px] border border-stone-200 bg-white p-6 shadow-sm"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           onSubmit={async (event) => {
@@ -260,7 +257,7 @@ function Admin() {
             }
           }}
         >
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-300">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-stone-500">
             Admin room builder
           </p>
           <h1 className="font-serif text-[clamp(3rem,11vw,6rem)] leading-[0.82]">
@@ -275,25 +272,25 @@ function Admin() {
           />
           <AdminField label="Room code" value={code} placeholder="LANAALEX" onChange={setCode} />
           {error ? (
-            <p className="rounded-2xl bg-red-950/60 p-3 font-black text-red-100">{error}</p>
+            <p className="rounded-2xl bg-red-50 p-3 font-black text-red-800">{error}</p>
           ) : null}
           <Button disabled={busy} type="submit">
             Create room and QR
           </Button>
-          <a className="font-black text-amber-200 underline" href="/">
+          <a className="font-black text-stone-600 underline" href="/">
             Back to guest camera
           </a>
         </motion.form>
 
         <motion.div
-          className="grid min-h-[520px] place-items-center rounded-[32px] border border-amber-50/15 bg-amber-50 p-6 text-stone-950 shadow-2xl"
+          className="grid min-h-[520px] place-items-center rounded-[28px] border border-stone-200 bg-white p-6 text-stone-950 shadow-sm"
           initial={{ opacity: 0, rotate: 1 }}
           animate={{ opacity: 1, rotate: 0 }}
         >
           {createdRoom ? (
             <div className="grid gap-5 text-center">
               <div>
-                <p className="text-sm font-black uppercase tracking-[0.16em] text-amber-700">
+                <p className="text-sm font-black uppercase tracking-[0.16em] text-stone-500">
                   Room code
                 </p>
                 <h2 className="font-serif text-6xl leading-none">{createdRoom.event.code}</h2>
@@ -301,13 +298,13 @@ function Admin() {
               </div>
               {qrCode ? (
                 <img
-                  className="mx-auto rounded-3xl border-8 border-white shadow-xl"
+                  className="mx-auto rounded-3xl border border-stone-200 shadow-sm"
                   src={qrCode}
                   alt="Join room QR code"
                 />
               ) : null}
               <a
-                className="break-all rounded-2xl bg-stone-950 p-4 font-black text-amber-50"
+                className="break-all rounded-2xl bg-stone-950 p-4 font-black text-white"
                 href={createdRoom.joinUrl}
               >
                 {createdRoom.joinUrl}
@@ -315,7 +312,7 @@ function Admin() {
             </div>
           ) : (
             <div className="text-center">
-              <p className="text-sm font-black uppercase tracking-[0.16em] text-amber-700">
+              <p className="text-sm font-black uppercase tracking-[0.16em] text-stone-500">
                 QR preview
               </p>
               <p className="mt-3 font-serif text-4xl leading-none text-stone-950/70">
@@ -343,10 +340,10 @@ function AdminField({
   placeholder?: string;
 }) {
   return (
-    <label className="grid gap-2 font-black text-amber-50/75">
+    <label className="grid gap-2 font-black text-stone-600">
       {label}
       <input
-        className="w-full rounded-2xl border border-amber-50/15 bg-black/40 px-4 py-3 text-amber-50 outline-none transition placeholder:text-amber-50/30 focus:border-amber-200/50 focus:ring-4 focus:ring-amber-300/15"
+        className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-4 focus:ring-stone-200"
         value={value}
         type={type}
         placeholder={placeholder}
@@ -371,9 +368,9 @@ function Login({
   const [busy, setBusy] = useState(false);
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,rgba(240,180,105,0.32),transparent_24rem),linear-gradient(140deg,#150d0a,#060505_72%)] p-5 text-stone-950">
+    <main className="grid min-h-screen place-items-center bg-stone-100 p-5 text-stone-950">
       <motion.form
-        className="grid w-[min(480px,100%)] gap-4 rounded-[30px] border border-amber-50/20 bg-amber-50/90 p-7 shadow-[0_30px_80px_rgba(0,0,0,0.45)]"
+        className="grid w-[min(480px,100%)] gap-4 rounded-[28px] border border-stone-200 bg-white p-7 shadow-sm"
         initial={{ opacity: 0, y: 24, rotate: -1 }}
         animate={{ opacity: 1, y: 0, rotate: 0 }}
         onSubmit={async (event) => {
@@ -397,7 +394,7 @@ function Login({
           }
         }}
       >
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700">
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-stone-500">
           Wedding camera
         </p>
         <h1 className="font-serif text-[clamp(3.2rem,16vw,5.4rem)] leading-[0.82]">
