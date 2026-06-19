@@ -37,6 +37,7 @@ The app UI behaves like a camera: an animated remaining-shot counter sits on the
 ## Architecture
 
 - `src/shared/api.ts` defines the Effect schemas and HTTP API contract shared by React and the Worker.
+- `src/client/galleryStore.ts` uses TanStack DB for live gallery queries and optimistic pending uploads.
 - `src/server/controllers.ts` is the thin Cloudflare/Hono adapter layer.
 - `src/server/services.ts` contains Effect workflows for rooms, sessions, gallery, uploads, and deletes.
 - `src/server/repositories.ts` contains Drizzle ORM and R2 access.
@@ -48,6 +49,8 @@ The app UI behaves like a camera: an animated remaining-shot counter sits on the
 - API, login, upload, photo, and admin routes have D1-backed rate limits.
 - Uploads validate file count, size, MIME type, and image magic bytes before background processing.
 - R2/DB upload completion runs in `executionCtx.waitUntil`, inspired by UploadThing's validate/middleware/complete flow.
+- The client inserts pending photos optimistically and reconciles them against server gallery refreshes while background upload completion runs.
+- The camera screen uses `getUserMedia` for a live camera preview and falls back to the native picker when camera access is unavailable.
 - Security headers include CSP, `nosniff`, frame denial, no-referrer, and a restrictive permissions policy.
 
 ## Cloudflare Setup

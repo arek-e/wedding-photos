@@ -2,8 +2,16 @@ import { AnimatePresence, motion } from "motion/react";
 import QRCode from "qrcode";
 import { startTransition, useEffect, useRef, useState } from "react";
 import { Schema } from "effect";
+import { useLiveQuery } from "@tanstack/react-db";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
+import {
+  addPendingPhotos,
+  galleryCollection,
+  removeGalleryPhoto,
+  syncServerPhotos,
+  type GalleryPhoto,
+} from "./galleryStore";
 import { cn } from "./lib/utils";
 import {
   CreateEventResponse,
@@ -13,7 +21,6 @@ import {
   SessionResponse,
   UploadResponse,
   type CreateEventResponse as CreatedRoom,
-  type PhotoDto as Photo,
   type SessionResponse as Session,
 } from "../shared/api";
 
@@ -34,26 +41,32 @@ const queryCode = () => new URLSearchParams(window.location.search).get("code") 
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [photos, setPhotos] = useState<ReadonlyArray<Photo>>([]);
   const [tab, setTab] = useState<Tab>("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const { data: photos } = useLiveQuery((q) =>
+    q.from({ photo: galleryCollection }).select(({ photo }) => photo),
+  );
 
   if (window.location.pathname === "/admin") {
     return <Admin />;
   }
 
   const remaining = session?.remaining ?? session?.maxPhotos ?? 20;
-  const visiblePhotos = tab === "personal" ? photos.filter((photo) => photo.isMine) : photos;
+  const visiblePhotos = [
+    ...(tab === "personal" ? photos.filter((photo) => photo.isMine) : photos),
+  ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
-  const refresh = async (nextTab = tab) => {
+  const refresh = async () => {
     const [{ photos: nextPhotos }, nextSession] = await Promise.all([
-      requestJson(GalleryResponse, `/api/gallery?scope=${nextTab}`),
+      requestJson(GalleryResponse, "/api/gallery?scope=all"),
       requestJson(SessionResponse, `/api/session?code=${encodeURIComponent(queryCode())}`),
     ]);
+    syncServerPhotos(nextPhotos);
     startTransition(() => {
-      setPhotos(nextPhotos);
       setSession(nextSession);
     });
   };
@@ -68,33 +81,107 @@ export function App() {
       .catch((caught: Error) => setError(caught.message));
   }, []);
 
+  useEffect(() => {
+    if (!session?.guest || !navigator.mediaDevices?.getUserMedia) return;
+    let cancelled = false;
+
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      })
+      .catch(() => {
+        streamRef.current = null;
+      });
+
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    };
+  }, [session?.guest?.id]);
+
+  const reconcileUploads = async () => {
+    for (const delay of [900, 1500, 2500, 4000]) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      await refresh();
+    }
+  };
+
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
     setBusy(true);
     setError("");
 
+    let pendingPhotos: ReadonlyArray<GalleryPhoto> = [];
     try {
       const body = new FormData();
-      [...files].forEach((file) => body.append("photos", file));
+      const fileArray = [...files];
+      pendingPhotos = fileArray.map((file) => ({
+        id: `pending-${crypto.randomUUID()}`,
+        guestName: session?.guest?.name ?? "You",
+        filename: file.name,
+        size: file.size,
+        createdAt: new Date().toISOString(),
+        isMine: true,
+        url: URL.createObjectURL(file),
+        uploadState: "pending" as const,
+      }));
+      addPendingPhotos(pendingPhotos);
+      fileArray.forEach((file) => body.append("photos", file));
       await requestJson(UploadResponse, "/api/upload", { method: "POST", body });
-      await refresh(tab);
+      void reconcileUploads();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not upload photo.");
+      for (const photo of pendingPhotos) {
+        removeGalleryPhoto(photo.id);
+      }
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     }
   };
 
-  const removePhoto = async (photo: Photo) => {
+  const captureLivePhoto = async () => {
+    const video = videoRef.current;
+    if (!video || !streamRef.current || video.readyState < 2) {
+      inputRef.current?.click();
+      return;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.92),
+    );
+    if (!blob) {
+      inputRef.current?.click();
+      return;
+    }
+
+    const file = new File([blob], `wedding-${Date.now()}.jpg`, { type: "image/jpeg" });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    await upload(transfer.files);
+  };
+
+  const removePhoto = async (photo: GalleryPhoto) => {
     if (!photo.isMine) return;
-    setPhotos((current) => current.filter((item) => item.id !== photo.id));
+    removeGalleryPhoto(photo.id);
+    if (photo.uploadState === "pending") return;
     try {
       await requestJson(OkResponse, `/api/photos/${photo.id}`, { method: "DELETE" });
-      await refresh(tab);
+      await refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not remove photo.");
-      await refresh(tab);
+      await refresh();
     }
   };
 
@@ -113,6 +200,14 @@ export function App() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-black p-0 text-stone-50 md:bg-stone-200 md:p-5">
       <section className="relative mx-auto grid h-dvh w-full grid-rows-[auto_1fr_auto] overflow-hidden bg-black shadow-2xl md:h-[calc(100vh-40px)] md:max-w-[1180px] md:rounded-[36px] md:border-[10px] md:border-stone-950">
+        <video
+          ref={videoRef}
+          className="absolute inset-0 size-full object-cover opacity-90"
+          autoPlay
+          muted
+          playsInline
+        />
+        <div className="absolute inset-0 bg-black/25" />
         <header className="z-10 grid grid-cols-[1fr_auto] items-center gap-4 p-4 text-xs font-black uppercase tracking-[0.12em] text-amber-50/80 md:grid-cols-[1fr_auto_1fr] md:p-6">
           <div>
             <span className="mr-2 inline-block size-2.5 rounded-full bg-red-500 shadow-[0_0_18px_#ef4444]" />
@@ -189,8 +284,8 @@ export function App() {
               variant="shutter"
               type="button"
               disabled={busy || remaining === 0}
-              onClick={() => inputRef.current?.click()}
-              aria-label="Take or choose photo"
+              onClick={() => void captureLivePhoto()}
+              aria-label="Take photo"
             >
               <span className="size-12 rounded-full bg-amber-50 md:size-14" />
             </Button>
@@ -203,7 +298,6 @@ export function App() {
             allCount={tab === "all" ? photos.length : visiblePhotos.length}
             onTabChange={(nextTab) => {
               setTab(nextTab);
-              void refresh(nextTab);
             }}
             onRemove={removePhoto}
           />
@@ -455,11 +549,11 @@ function GalleryTray({
   onRemove,
 }: {
   tab: Tab;
-  photos: ReadonlyArray<Photo>;
+  photos: ReadonlyArray<GalleryPhoto>;
   personalCount: number;
   allCount: number;
   onTabChange: (tab: Tab) => void;
-  onRemove: (photo: Photo) => void;
+  onRemove: (photo: GalleryPhoto) => void;
 }) {
   return (
     <aside className="w-[122px] justify-self-end md:w-[min(330px,32vw)]" aria-label="Gallery">

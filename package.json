@@ -17,6 +17,8 @@
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@effect/platform": "latest",
+    "@tanstack/db": "^0.6.9",
+    "@tanstack/react-db": "^0.1.87",
     "clsx": "^2.1.1",
     "drizzle-orm": "latest",
     "effect": "latest",
