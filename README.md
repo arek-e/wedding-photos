@@ -1,6 +1,8 @@
 # Wedding Photos
 
-A simple Cloudflare wedding photo gallery. Guests join with a Kahoot-style room code from a QR link, identify themselves by phone number, and upload up to 20 photos each.
+A simple Cloudflare wedding photo camera. Guests join with a Kahoot-style room code from a QR link, identify themselves by phone number, and upload up to 20 photos each.
+
+The app UI behaves like a camera: an animated remaining-shot counter sits on the bottom left, a center shutter opens the phone camera/photo picker, and a right-side Polaroid gallery has All and Yours tabs. Guests can swipe their own Polaroids away to delete photos they do not want to keep.
 
 ## Stack
 
@@ -10,14 +12,27 @@ A simple Cloudflare wedding photo gallery. Guests join with a Kahoot-style room 
 - Drizzle ORM for schema and queries
 - Effect for the app service layer
 - Hono for routing
+- React, Motion, and Vite+ for the frontend
 
 ## Local Setup
 
-1. Install dependencies with `bun install`.
-2. Copy `.dev.vars.example` to `.dev.vars` and set `SESSION_SECRET`.
-3. Run D1 migrations locally with `bun run db:migrate:local`.
-4. Start the app with `bun run dev`.
-5. Open `http://localhost:8787/?code=WEDDING`.
+1. Install the `vp` CLI with `curl -fsSL https://vite.plus | bash` if it is not already installed.
+2. Open a new terminal so `vp` is on PATH.
+3. Install dependencies with `vp install`.
+4. Copy `.dev.vars.example` to `.dev.vars` and set `SESSION_SECRET`.
+5. Run D1 migrations locally with `vp run db:migrate:local`.
+6. For frontend-only UI work, run `vp dev`.
+7. For the full Worker, D1, R2, and API stack, run `vp build` and then `vp run worker:dev`.
+8. Open `http://localhost:8787/?code=WEDDING` when using `worker:dev`.
+
+## Vite+ Commands
+
+- `vp install` installs dependencies with the project package manager.
+- `vp dev` starts the Vite frontend dev server.
+- `vp check` formats, lints, and type-checks.
+- `vp build` builds the production frontend into `dist`.
+- `vp run worker:dev` starts Wrangler for the full Cloudflare app.
+- `vp run deploy` builds and deploys the Worker.
 
 ## Cloudflare Setup
 
@@ -31,8 +46,8 @@ wrangler r2 bucket create wedding-photos
 Update `wrangler.toml` with the D1 `database_id`, set production secrets/vars, then run:
 
 ```sh
-bun run db:migrate:remote
-bun run deploy
+vp run db:migrate:remote
+vp run deploy
 ```
 
 ## QR Code
