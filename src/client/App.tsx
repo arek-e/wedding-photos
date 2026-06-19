@@ -331,7 +331,7 @@ function CameraRoute() {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     };
-  }, [session?.guest, streamRef, videoRef]);
+  }, [session?.guest?.id, streamRef, videoRef]);
 
   if (!session) {
     return (
@@ -367,9 +367,9 @@ function CameraRoute() {
                 key={`flash-${captureFeedbackKey}`}
                 className="pointer-events-none absolute inset-0 z-20 bg-white"
                 initial={{ opacity: 0 }}
-                animate={{ opacity: [0, 0.62, 0] }}
+                animate={{ opacity: [0, 0.18, 0] }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.22, times: [0, 0.15, 1], ease: "easeOut" }}
+                transition={{ duration: 0.16, times: [0, 0.2, 1], ease: "easeOut" }}
               />
             ) : null}
           </AnimatePresence>
