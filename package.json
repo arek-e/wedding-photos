@@ -26,8 +26,8 @@
     "motion": "^12.40.0",
     "nanoid": "latest",
     "qrcode": "^1.5.4",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.3.0-canary-b1786c31-20260618",
+    "react-dom": "^19.3.0-canary-b1786c31-20260618",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {

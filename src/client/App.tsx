@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import QRCode from "qrcode";
-import { startTransition, useEffect, useRef, useState } from "react";
+import { ViewTransition, startTransition, useEffect, useRef, useState } from "react";
 import { Schema } from "effect";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Popover } from "@base-ui/react/popover";
@@ -26,6 +26,7 @@ import {
 } from "../shared/api";
 
 type Tab = "all" | "personal";
+type View = "camera" | "gallery" | "detail";
 
 const requestJson = async <A, I>(
   schema: Schema.Schema<A, I, never>,
@@ -43,10 +44,12 @@ const queryCode = () => new URLSearchParams(window.location.search).get("code") 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [tab, setTab] = useState<Tab>("all");
-  const [view, setView] = useState<"camera" | "gallery">("camera");
+  const [view, setView] = useState<View>("camera");
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const { data: photos } = useLiveQuery((q) =>
@@ -64,6 +67,14 @@ export function App() {
   const visiblePhotos = [
     ...(tab === "personal" ? photos.filter((photo) => photo.isMine) : photos),
   ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const selectedPhoto = photos.find((photo) => photo.id === selectedPhotoId) ?? null;
+
+  const goToView = (nextView: View, photoId?: string) => {
+    startTransition(() => {
+      if (photoId !== undefined) setSelectedPhotoId(photoId);
+      setView(nextView);
+    });
+  };
 
   const refresh = async () => {
     const [{ photos: nextPhotos }, nextSession] = await Promise.all([
@@ -205,126 +216,154 @@ export function App() {
 
   if (view === "gallery") {
     return (
-      <GalleryView
-        tab={tab}
-        photos={visiblePhotos}
-        allCount={photos.length}
-        personalCount={personalPhotos.length}
-        onBack={() => setView("camera")}
-        onRemove={removePhoto}
-        onTabChange={setTab}
-      />
+      <ViewTransition name="gallery-view">
+        <GalleryView
+          tab={tab}
+          photos={visiblePhotos}
+          allCount={photos.length}
+          personalCount={personalPhotos.length}
+          onBack={() => goToView("camera")}
+          onOpenPhoto={(photo) => goToView("detail", photo.id)}
+          onRemove={removePhoto}
+          onTabChange={setTab}
+        />
+      </ViewTransition>
+    );
+  }
+
+  if (view === "detail" && selectedPhoto) {
+    return (
+      <ViewTransition name="detail-view">
+        <PhotoDetailView
+          photo={selectedPhoto}
+          onBack={() => goToView("gallery")}
+          onRemove={removePhoto}
+        />
+      </ViewTransition>
     );
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-black p-0 text-stone-50 md:bg-stone-200 md:p-5">
-      <section className="relative mx-auto grid h-dvh w-full grid-rows-[auto_1fr_auto] overflow-hidden bg-black shadow-2xl md:h-[calc(100vh-40px)] md:max-w-[1180px] md:rounded-[36px] md:border-[10px] md:border-stone-950">
-        <video
-          ref={videoRef}
-          className="absolute inset-0 size-full object-cover opacity-90"
-          autoPlay
-          muted
-          playsInline
-        />
-        <div className="absolute inset-0 bg-black/25" />
-        <header className="z-10 grid grid-cols-[1fr_auto] items-center gap-4 p-4 md:grid-cols-[1fr_auto_1fr] md:p-6">
-          <Button
-            className="justify-self-start"
-            variant="ghost"
-            type="button"
-            onClick={() => setView("gallery")}
-          >
-            Gallery
-          </Button>
-          <UserMenu
-            name={session.guest.name}
-            onSignOut={async () => {
-              await requestJson(OkResponse, "/api/logout", { method: "POST" });
-              setSession({ guest: null, eventCode: queryCode(), maxPhotos: 20 });
-            }}
+    <ViewTransition name="camera-view">
+      <main className="relative min-h-screen overflow-hidden bg-black p-0 text-stone-50 md:bg-stone-200 md:p-5">
+        <section className="relative mx-auto grid h-dvh w-full grid-rows-[auto_1fr_auto] overflow-hidden bg-black shadow-2xl md:h-[calc(100vh-40px)] md:max-w-[1180px] md:rounded-[36px] md:border-[10px] md:border-stone-950">
+          <video
+            ref={videoRef}
+            className="absolute inset-0 size-full object-cover opacity-90"
+            autoPlay
+            muted
+            playsInline
           />
-        </header>
+          <div className="absolute inset-0 bg-black/25" />
+          <header className="z-10 grid grid-cols-[1fr_auto] items-center gap-4 p-4 md:grid-cols-[1fr_auto_1fr] md:p-6">
+            <div />
+            <UserMenu
+              name={session.guest.name}
+              onSignOut={async () => {
+                await requestJson(OkResponse, "/api/logout", { method: "POST" });
+                setSession({ guest: null, eventCode: queryCode(), maxPhotos: 20 });
+              }}
+            />
+          </header>
 
-        <div className="pointer-events-none absolute inset-[18%_10%_34%] border border-white/20 md:inset-[22%_22%_28%]">
-          <span className="absolute -left-px -top-px size-8 border-l-2 border-t-2 border-white" />
-          <span className="absolute -right-px -top-px size-8 border-r-2 border-t-2 border-white" />
-          <span className="absolute -bottom-px -left-px size-8 border-b-2 border-l-2 border-white" />
-          <span className="absolute -bottom-px -right-px size-8 border-b-2 border-r-2 border-white" />
-        </div>
+          <div className="pointer-events-none absolute inset-[18%_10%_34%] border border-white/20 md:inset-[22%_22%_28%]">
+            <span className="absolute -left-px -top-px size-8 border-l-2 border-t-2 border-white" />
+            <span className="absolute -right-px -top-px size-8 border-r-2 border-t-2 border-white" />
+            <span className="absolute -bottom-px -left-px size-8 border-b-2 border-l-2 border-white" />
+            <span className="absolute -bottom-px -right-px size-8 border-b-2 border-r-2 border-white" />
+          </div>
 
-        <motion.div
-          className="mx-auto mb-[8vh] w-[min(660px,calc(100%-40px))] self-end text-center md:mb-0 md:self-center"
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-white/70">
-            {session.guest.name}'s camera
-          </p>
-          <h1 className="font-serif text-[clamp(3rem,11vw,7.8rem)] leading-[0.82] text-balance">
-            Catch a real moment.
-          </h1>
-        </motion.div>
-
-        <input
-          ref={inputRef}
-          className="hidden"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          multiple
-          disabled={busy || remaining === 0}
-          onChange={(event) => void upload(event.currentTarget.files)}
-        />
-
-        <footer className="z-10 grid grid-cols-[1fr_auto_1fr] items-end gap-3 p-4 md:p-6">
           <motion.div
-            className="grid min-w-20 grid-cols-[auto_auto] items-end gap-2 justify-self-start rounded-[22px] border border-white/20 bg-stone-950 px-3 py-2 md:min-w-28 md:px-4 md:py-3"
-            layout
-            aria-live="polite"
+            className="mx-auto mb-[8vh] w-[min(660px,calc(100%-40px))] self-end text-center md:mb-0 md:self-center"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
           >
-            <span className="text-[0.68rem] font-black uppercase text-white/55 md:text-xs">
-              left
-            </span>
-            <AnimatePresence mode="popLayout" initial={false}>
-              <motion.strong
-                key={remaining}
-                className="inline-block font-serif text-4xl leading-[0.8] md:text-5xl"
-                initial={{ y: 18, opacity: 0, scale: 0.8 }}
-                animate={{ y: 0, opacity: 1, scale: 1 }}
-                exit={{ y: -18, opacity: 0, scale: 0.8 }}
-              >
-                {remaining}
-              </motion.strong>
-            </AnimatePresence>
+            <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-white/70">
+              {session.guest.name}'s camera
+            </p>
+            <h1 className="font-serif text-[clamp(3rem,11vw,7.8rem)] leading-[0.82] text-balance">
+              Catch a real moment.
+            </h1>
           </motion.div>
 
-          <motion.div whileTap={{ scale: 0.86 }}>
-            <Button
-              variant="shutter"
-              type="button"
-              disabled={busy || remaining === 0}
-              onClick={() => void captureLivePhoto()}
-              aria-label="Take photo"
-            >
-              <span className="size-12 rounded-full bg-amber-50 md:size-14" />
-            </Button>
-          </motion.div>
-
-          <Button
-            className="size-16 justify-self-end rounded-full border border-white/20 bg-stone-950 p-0 text-[0.68rem] uppercase tracking-wide text-white shadow-lg md:size-20"
-            type="button"
+          <input
+            ref={inputRef}
+            className="hidden"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
             disabled={busy || remaining === 0}
-            onClick={() => inputRef.current?.click()}
-          >
-            Upload
-          </Button>
-        </footer>
-      </section>
-      <AnimatePresence>
-        {error ? <Toast message={error} onClose={() => setError("")} /> : null}
-      </AnimatePresence>
-    </main>
+            onChange={(event) => void upload(event.currentTarget.files)}
+          />
+          <input
+            ref={uploadInputRef}
+            className="hidden"
+            type="file"
+            accept="image/*"
+            multiple
+            disabled={busy || remaining === 0}
+            onChange={(event) => void upload(event.currentTarget.files)}
+          />
+
+          <footer className="z-10 grid grid-cols-[1fr_auto_1fr] items-end gap-3 p-4 md:p-6">
+            <div className="grid justify-self-start gap-3">
+              <Button
+                className="h-11 rounded-full border border-white/20 bg-stone-950 px-4 text-[0.68rem] uppercase tracking-wide text-white shadow-lg"
+                type="button"
+                disabled={busy || remaining === 0}
+                onClick={() => uploadInputRef.current?.click()}
+              >
+                Upload
+              </Button>
+              <motion.div
+                className="grid min-w-20 grid-cols-[auto_auto] items-end gap-2 rounded-[22px] border border-white/20 bg-stone-950 px-3 py-2 md:min-w-28 md:px-4 md:py-3"
+                layout
+                aria-live="polite"
+              >
+                <span className="text-[0.68rem] font-black uppercase text-white/55 md:text-xs">
+                  left
+                </span>
+                <AnimatePresence mode="popLayout" initial={false}>
+                  <motion.strong
+                    key={remaining}
+                    className="inline-block font-serif text-4xl leading-[0.8] md:text-5xl"
+                    initial={{ y: 18, opacity: 0, scale: 0.8 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: -18, opacity: 0, scale: 0.8 }}
+                  >
+                    {remaining}
+                  </motion.strong>
+                </AnimatePresence>
+              </motion.div>
+            </div>
+
+            <motion.div whileTap={{ scale: 0.86 }}>
+              <Button
+                variant="shutter"
+                type="button"
+                disabled={busy || remaining === 0}
+                onClick={() => void captureLivePhoto()}
+                aria-label="Take photo"
+              >
+                <span className="size-12 rounded-full bg-amber-50 md:size-14" />
+              </Button>
+            </motion.div>
+
+            <Button
+              className="size-16 justify-self-end rounded-full border border-white/20 bg-stone-950 p-0 text-[0.68rem] uppercase tracking-wide text-white shadow-lg md:size-20"
+              type="button"
+              onClick={() => goToView("gallery")}
+            >
+              Gallery
+            </Button>
+          </footer>
+        </section>
+        <AnimatePresence>
+          {error ? <Toast message={error} onClose={() => setError("")} /> : null}
+        </AnimatePresence>
+      </main>
+    </ViewTransition>
   );
 }
 
@@ -568,7 +607,7 @@ function UserMenu({ name, onSignOut }: { name: string; onSignOut: () => Promise<
 
   return (
     <Popover.Root>
-      <Popover.Trigger className="grid size-11 justify-self-end rounded-full bg-white font-black text-stone-950 shadow-lg md:col-start-3">
+      <Popover.Trigger className="grid size-11 place-items-center justify-self-end rounded-full bg-white font-black text-stone-950 shadow-lg md:col-start-3">
         {initials || "U"}
       </Popover.Trigger>
       <Popover.Portal>
@@ -600,6 +639,7 @@ function GalleryView({
   personalCount,
   allCount,
   onBack,
+  onOpenPhoto,
   onTabChange,
   onRemove,
 }: {
@@ -608,6 +648,7 @@ function GalleryView({
   personalCount: number;
   allCount: number;
   onBack: () => void;
+  onOpenPhoto: (photo: GalleryPhoto) => void;
   onTabChange: (tab: Tab) => void;
   onRemove: (photo: GalleryPhoto) => void;
 }) {
@@ -646,7 +687,13 @@ function GalleryView({
               </motion.div>
             ) : (
               photos.map((photo, index) => (
-                <PolaroidCard key={photo.id} photo={photo} index={index} onRemove={onRemove} />
+                <PolaroidCard
+                  key={photo.id}
+                  photo={photo}
+                  index={index}
+                  onOpen={onOpenPhoto}
+                  onRemove={onRemove}
+                />
               ))
             )}
           </AnimatePresence>
@@ -659,10 +706,12 @@ function GalleryView({
 function PolaroidCard({
   photo,
   index,
+  onOpen,
   onRemove,
 }: {
   photo: GalleryPhoto;
   index: number;
+  onOpen: (photo: GalleryPhoto) => void;
   onRemove: (photo: GalleryPhoto) => void;
 }) {
   return (
@@ -679,11 +728,15 @@ function PolaroidCard({
         if (Math.abs(info.offset.x) > 120) onRemove(photo);
       }}
     >
-      <img
-        className="aspect-square w-full rounded-sm object-cover"
-        src={photo.url}
-        alt={photo.filename}
-      />
+      <button className="block w-full" type="button" onClick={() => onOpen(photo)}>
+        <ViewTransition name={`photo-${photo.id}`}>
+          <img
+            className="aspect-square w-full rounded-sm object-cover"
+            src={photo.url}
+            alt={photo.filename}
+          />
+        </ViewTransition>
+      </button>
       <footer className="grid gap-0.5 px-0.5 pt-2 font-serif">
         <span className="truncate font-black">{photo.guestName}</span>
         <small className="text-[0.68rem] font-black uppercase text-stone-950/55">
@@ -691,6 +744,57 @@ function PolaroidCard({
         </small>
       </footer>
     </motion.article>
+  );
+}
+
+function PhotoDetailView({
+  photo,
+  onBack,
+  onRemove,
+}: {
+  photo: GalleryPhoto;
+  onBack: () => void;
+  onRemove: (photo: GalleryPhoto) => void;
+}) {
+  return (
+    <main className="min-h-screen bg-stone-950 p-4 text-white md:p-8">
+      <header className="mx-auto mb-6 flex max-w-6xl items-center justify-between gap-4">
+        <Button
+          className="bg-white text-stone-950 shadow-none hover:bg-stone-100"
+          type="button"
+          onClick={onBack}
+        >
+          Gallery
+        </Button>
+        {photo.isMine ? (
+          <Button
+            className="bg-white text-red-700 shadow-none hover:bg-red-50"
+            type="button"
+            onClick={() => {
+              onRemove(photo);
+              onBack();
+            }}
+          >
+            Remove
+          </Button>
+        ) : null}
+      </header>
+
+      <section className="mx-auto grid max-w-6xl gap-5 md:grid-cols-[1fr_280px] md:items-start">
+        <ViewTransition name={`photo-${photo.id}`}>
+          <img
+            className="max-h-[78vh] w-full bg-black object-contain"
+            src={photo.url}
+            alt={photo.filename}
+          />
+        </ViewTransition>
+        <aside className="grid gap-2 text-white/80">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">Photo by</p>
+          <h1 className="font-serif text-4xl leading-none text-white">{photo.guestName}</h1>
+          <p className="break-all text-sm font-bold text-white/55">{photo.filename}</p>
+        </aside>
+      </section>
+    </main>
   );
 }
 
