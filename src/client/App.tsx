@@ -52,6 +52,7 @@ type AppRouterContext = {
   remaining: number;
   busy: boolean;
   error: string;
+  captureFeedbackKey: number;
   inputRef: RefObject<HTMLInputElement | null>;
   uploadInputRef: RefObject<HTMLInputElement | null>;
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -129,8 +130,10 @@ export function App() {
   const [tab, setTab] = useState<Tab>("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [captureFeedbackKey, setCaptureFeedbackKey] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const uploadInFlightRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const { data: photos } = useLiveQuery((q) =>
@@ -167,14 +170,15 @@ export function App() {
   }, []);
 
   const reconcileUploads = async () => {
-    for (const delay of [900, 1500, 2500, 4000]) {
+    for (const delay of [250, 750, 1500, 2500, 4000]) {
       await new Promise((resolve) => setTimeout(resolve, delay));
       await refresh();
     }
   };
 
   const upload = async (files: FileList | null) => {
-    if (!files?.length) return;
+    if (!files?.length || uploadInFlightRef.current) return;
+    uploadInFlightRef.current = true;
     setBusy(true);
     setError("");
 
@@ -192,7 +196,7 @@ export function App() {
         url: URL.createObjectURL(file),
         uploadState: "pending" as const,
       }));
-      addPendingPhotos(pendingPhotos);
+      await addPendingPhotos(pendingPhotos);
       fileArray.forEach((file) => body.append("photos", file));
       body.append("clientIds", JSON.stringify(pendingPhotos.map((photo) => photo.id)));
       await requestJson(UploadResponse, "/api/upload", { method: "POST", body });
@@ -200,15 +204,18 @@ export function App() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not upload photo.");
       for (const photo of pendingPhotos) {
-        removeGalleryPhoto(photo.id);
+        void removeGalleryPhoto(photo.id);
       }
     } finally {
       setBusy(false);
+      uploadInFlightRef.current = false;
       if (inputRef.current) inputRef.current.value = "";
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
     }
   };
 
   const captureLivePhoto = async () => {
+    setCaptureFeedbackKey((key) => key + 1);
     const video = videoRef.current;
     if (!video || !streamRef.current || video.readyState < 2) {
       inputRef.current?.click();
@@ -235,7 +242,7 @@ export function App() {
 
   const removePhoto = async (photo: GalleryPhoto) => {
     if (!photo.isMine) return;
-    removeGalleryPhoto(photo.id);
+    await removeGalleryPhoto(photo.id);
     if (photo.uploadState === "pending") return;
     try {
       await requestJson(OkResponse, `/api/photos/${photo.id}`, { method: "DELETE" });
@@ -262,6 +269,7 @@ export function App() {
         remaining,
         busy,
         error,
+        captureFeedbackKey,
         inputRef,
         uploadInputRef,
         videoRef,
@@ -287,6 +295,7 @@ function CameraRoute() {
     personalPhotos,
     busy,
     error,
+    captureFeedbackKey,
     inputRef,
     uploadInputRef,
     videoRef,
@@ -340,6 +349,30 @@ function CameraRoute() {
     <ViewTransition name="camera-view">
       <main className="relative min-h-screen overflow-hidden bg-black p-0 text-stone-50 md:bg-stone-200 md:p-5">
         <section className="relative mx-auto grid h-dvh w-full grid-rows-[auto_1fr_auto] overflow-hidden bg-black shadow-2xl md:h-[calc(100vh-40px)] md:max-w-[1180px] md:rounded-[36px] md:border-[10px] md:border-stone-950">
+          <AnimatePresence>
+            {captureFeedbackKey > 0 ? (
+              <motion.div
+                key={captureFeedbackKey}
+                className="pointer-events-none absolute inset-0 z-20 border-[12px] border-white md:rounded-[26px]"
+                initial={{ opacity: 0, scale: 0.985 }}
+                animate={{ opacity: [0, 1, 0.72, 0], scale: [0.985, 1, 1, 1.012] }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.42, times: [0, 0.12, 0.32, 1], ease: "easeOut" }}
+              />
+            ) : null}
+          </AnimatePresence>
+          <AnimatePresence>
+            {captureFeedbackKey > 0 ? (
+              <motion.div
+                key={`flash-${captureFeedbackKey}`}
+                className="pointer-events-none absolute inset-0 z-20 bg-white"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0, 0.62, 0] }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.22, times: [0, 0.15, 1], ease: "easeOut" }}
+              />
+            ) : null}
+          </AnimatePresence>
           <video
             ref={videoRef}
             className="absolute inset-0 size-full object-cover opacity-90"
@@ -425,7 +458,11 @@ function CameraRoute() {
               </motion.div>
             </div>
 
-            <motion.div whileTap={{ scale: 0.86 }}>
+            <motion.div
+              animate={captureFeedbackKey > 0 ? { scale: [1, 0.9, 1.04, 1] } : { scale: 1 }}
+              transition={{ duration: 0.34, ease: "easeOut" }}
+              whileTap={{ scale: 0.86 }}
+            >
               <Button
                 variant="shutter"
                 type="button"

@@ -18,33 +18,32 @@ const waitFor = (transaction: { isPersisted: { promise: Promise<unknown> } }) =>
 export const upsertGalleryPhoto = (photo: GalleryPhoto) => {
   const existing = galleryCollection.state.get(photo.id);
   if (existing) {
-    void waitFor(
+    return waitFor(
       galleryCollection.update(photo.id, (draft) => {
         Object.assign(draft, photo);
         if (!photo.uploadState) delete draft.uploadState;
       }),
     );
-    return;
   }
-  void waitFor(galleryCollection.insert(photo));
+  return waitFor(galleryCollection.insert(photo));
 };
 
 export const removeGalleryPhoto = (id: string) => {
   if (!galleryCollection.state.has(id)) return;
-  void waitFor(galleryCollection.delete(id));
+  return waitFor(galleryCollection.delete(id));
 };
 
 export const addPendingPhotos = (photos: ReadonlyArray<GalleryPhoto>) => {
-  photos.forEach(upsertGalleryPhoto);
+  return Promise.all(photos.map(upsertGalleryPhoto));
 };
 
 export const syncServerPhotos = (serverPhotos: ReadonlyArray<PhotoDto>) => {
   const serverKeys = new Set(serverPhotos.map((photo) => photo.id));
   for (const photo of serverPhotos) {
-    upsertGalleryPhoto(photo);
+    void upsertGalleryPhoto(photo);
   }
 
   for (const photo of galleryCollection.state.values()) {
-    if (!photo.uploadState && !serverKeys.has(photo.id)) removeGalleryPhoto(photo.id);
+    if (!photo.uploadState && !serverKeys.has(photo.id)) void removeGalleryPhoto(photo.id);
   }
 };
