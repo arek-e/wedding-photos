@@ -1,35 +1,40 @@
 import { AnimatePresence, motion } from "motion/react";
 import QRCode from "qrcode";
 import { startTransition, useEffect, useRef, useState } from "react";
+import { Schema } from "effect";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { cn } from "./lib/utils";
+import {
+  CreateEventResponse,
+  GalleryResponse,
+  LoginResponse,
+  OkResponse,
+  SessionResponse,
+  UploadResponse,
+  type CreateEventResponse as CreatedRoom,
+  type PhotoDto as Photo,
+  type SessionResponse as Session,
+} from "../shared/api";
 
-type Guest = { id: string; name: string; phone: string };
-type Session = { guest: Guest | null; eventCode: string; maxPhotos: number; remaining?: number };
-type Photo = {
-  id: string;
-  guestName: string;
-  filename: string;
-  createdAt: string;
-  isMine: boolean;
-  url: string;
-};
 type Tab = "all" | "personal";
-type CreatedRoom = { event: { id: string; name: string; code: string }; joinUrl: string };
 
-const requestJson = async <T,>(input: RequestInfo, init?: RequestInit): Promise<T> => {
+const requestJson = async <A, I>(
+  schema: Schema.Schema<A, I, never>,
+  input: RequestInfo,
+  init?: RequestInit,
+): Promise<A> => {
   const response = await fetch(input, init);
-  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  const data = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) throw new Error(data.error ?? "Something went wrong.");
-  return data;
+  return Schema.decodeUnknownPromise(schema)(data);
 };
 
 const queryCode = () => new URLSearchParams(window.location.search).get("code") ?? "";
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [photos, setPhotos] = useState<ReadonlyArray<Photo>>([]);
   const [tab, setTab] = useState<Tab>("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -44,8 +49,8 @@ export function App() {
 
   const refresh = async (nextTab = tab) => {
     const [{ photos: nextPhotos }, nextSession] = await Promise.all([
-      requestJson<{ photos: Photo[] }>(`/api/gallery?scope=${nextTab}`),
-      requestJson<Session>(`/api/session?code=${encodeURIComponent(queryCode())}`),
+      requestJson(GalleryResponse, `/api/gallery?scope=${nextTab}`),
+      requestJson(SessionResponse, `/api/session?code=${encodeURIComponent(queryCode())}`),
     ]);
     startTransition(() => {
       setPhotos(nextPhotos);
@@ -54,7 +59,7 @@ export function App() {
   };
 
   useEffect(() => {
-    requestJson<Session>(`/api/session?code=${encodeURIComponent(queryCode())}`)
+    requestJson(SessionResponse, `/api/session?code=${encodeURIComponent(queryCode())}`)
       .then((nextSession) => {
         setSession(nextSession);
         if (nextSession.guest) return refresh();
@@ -71,7 +76,7 @@ export function App() {
     try {
       const body = new FormData();
       [...files].forEach((file) => body.append("photos", file));
-      await requestJson<{ remaining: number }>("/api/upload", { method: "POST", body });
+      await requestJson(UploadResponse, "/api/upload", { method: "POST", body });
       await refresh(tab);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not upload photo.");
@@ -85,7 +90,7 @@ export function App() {
     if (!photo.isMine) return;
     setPhotos((current) => current.filter((item) => item.id !== photo.id));
     try {
-      await requestJson<{ ok: boolean }>(`/api/photos/${photo.id}`, { method: "DELETE" });
+      await requestJson(OkResponse, `/api/photos/${photo.id}`, { method: "DELETE" });
       await refresh(tab);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not remove photo.");
@@ -118,7 +123,7 @@ export function App() {
             variant="ghost"
             type="button"
             onClick={async () => {
-              await requestJson("/api/logout", { method: "POST" });
+              await requestJson(OkResponse, "/api/logout", { method: "POST" });
               setSession({ guest: null, eventCode: queryCode(), maxPhotos: 20 });
             }}
           >
@@ -212,7 +217,6 @@ export function App() {
 }
 
 function Admin() {
-  const [adminPin, setAdminPin] = useState("");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
@@ -244,10 +248,10 @@ function Admin() {
             setError("");
             setQrCode("");
             try {
-              const room = await requestJson<CreatedRoom>("/api/admin/events", {
+              const room = await requestJson(CreateEventResponse, "/api/admin/events", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ adminPin, name, code }),
+                body: JSON.stringify({ name, code }),
               });
               setCreatedRoom(room);
             } catch (caught) {
@@ -263,7 +267,6 @@ function Admin() {
           <h1 className="font-serif text-[clamp(3rem,11vw,6rem)] leading-[0.82]">
             Create a wedding room.
           </h1>
-          <AdminField label="Admin PIN" value={adminPin} type="password" onChange={setAdminPin} />
           <AdminField
             label="Event name"
             value={name}
@@ -378,12 +381,13 @@ function Login({
           setBusy(true);
           setError("");
           try {
-            await requestJson("/api/login", {
+            await requestJson(LoginResponse, "/api/login", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ code, name, phone }),
             });
-            const nextSession = await requestJson<Session>(
+            const nextSession = await requestJson(
+              SessionResponse,
               `/api/session?code=${encodeURIComponent(code)}`,
             );
             onLogin(nextSession);
@@ -451,7 +455,7 @@ function GalleryTray({
   onRemove,
 }: {
   tab: Tab;
-  photos: Photo[];
+  photos: ReadonlyArray<Photo>;
   personalCount: number;
   allCount: number;
   onTabChange: (tab: Tab) => void;

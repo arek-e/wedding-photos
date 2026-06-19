@@ -41,6 +41,13 @@ export const photos = sqliteTable("photos", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+export const rateLimits = sqliteTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull(),
+  windowStart: integer("window_start").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+});
+
 export type Guest = typeof guests.$inferSelect;
 export type Photo = typeof photos.$inferSelect;
 export type Event = typeof events.$inferSelect;

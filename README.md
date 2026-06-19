@@ -19,7 +19,7 @@ The app UI behaves like a camera: an animated remaining-shot counter sits on the
 1. Install the `vp` CLI with `curl -fsSL https://vite.plus | bash` if it is not already installed.
 2. Open a new terminal so `vp` is on PATH.
 3. Install dependencies with `vp install`.
-4. Copy `.dev.vars.example` to `.dev.vars` and set `SESSION_SECRET` plus `ADMIN_PIN`.
+4. Copy `.dev.vars.example` to `.dev.vars` and set `SESSION_SECRET`.
 5. Run D1 migrations locally with `vp run db:migrate:local`.
 6. For frontend-only UI work, run `vp dev`.
 7. For the full Worker, D1, R2, and API stack, run `vp build` and then `vp run worker:dev`.
@@ -34,6 +34,22 @@ The app UI behaves like a camera: an animated remaining-shot counter sits on the
 - `vp run worker:dev` starts Wrangler for the full Cloudflare app.
 - `vp run deploy` builds and deploys the Worker.
 
+## Architecture
+
+- `src/shared/api.ts` defines the Effect schemas and HTTP API contract shared by React and the Worker.
+- `src/server/controllers.ts` is the thin Cloudflare/Hono adapter layer.
+- `src/server/services.ts` contains Effect workflows for rooms, sessions, gallery, uploads, and deletes.
+- `src/server/repositories.ts` contains Drizzle ORM and R2 access.
+
+## Security Notes
+
+- Admin room creation is intentionally open for now, but rate-limited.
+- Guest sessions are signed HTTP-only cookies.
+- API, login, upload, photo, and admin routes have D1-backed rate limits.
+- Uploads validate file count, size, MIME type, and image magic bytes before background processing.
+- R2/DB upload completion runs in `executionCtx.waitUntil`, inspired by UploadThing's validate/middleware/complete flow.
+- Security headers include CSP, `nosniff`, frame denial, no-referrer, and a restrictive permissions policy.
+
 ## Cloudflare Setup
 
 Create the resources:
@@ -43,11 +59,10 @@ wrangler d1 create wedding_photos_rooms
 wrangler r2 bucket create wedding-photos
 ```
 
-Update `wrangler.toml` with the D1 `database_id`, set production secrets, then run:
+Update `wrangler.toml` with the D1 `database_id`, set the production session secret, then run:
 
 ```sh
 wrangler secret put SESSION_SECRET
-wrangler secret put ADMIN_PIN
 ```
 
 Then migrate and deploy:
