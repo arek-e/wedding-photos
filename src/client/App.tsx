@@ -2,7 +2,9 @@ import { AnimatePresence, motion } from "motion/react";
 import QRCode from "qrcode";
 import {
   ViewTransition,
+  createContext,
   startTransition,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -14,7 +16,7 @@ import { Popover } from "@base-ui/react/popover";
 import {
   Outlet,
   RouterProvider,
-  createRootRouteWithContext,
+  createRootRoute,
   createRoute,
   createRouter,
   useNavigate,
@@ -63,7 +65,15 @@ type AppRouterContext = {
   signOut: () => Promise<void>;
 };
 
-const rootRoute = createRootRouteWithContext<AppRouterContext>()({
+const AppStateContext = createContext<AppRouterContext | null>(null);
+
+const useAppState = () => {
+  const context = useContext(AppStateContext);
+  if (!context) throw new Error("App state is not available.");
+  return context;
+};
+
+const rootRoute = createRootRoute({
   component: () => <Outlet />,
 });
 
@@ -93,7 +103,7 @@ const adminRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([indexRoute, galleryRoute, photoRoute, adminRoute]);
 
-const router = createRouter({ routeTree, context: undefined! as AppRouterContext });
+const router = createRouter({ routeTree });
 
 declare module "@tanstack/react-router" {
   interface Register {
@@ -242,9 +252,8 @@ export function App() {
   };
 
   return (
-    <RouterProvider
-      router={router}
-      context={{
+    <AppStateContext.Provider
+      value={{
         session,
         tab,
         photos,
@@ -265,7 +274,9 @@ export function App() {
         removePhoto,
         signOut,
       }}
-    />
+    >
+      <RouterProvider router={router} />
+    </AppStateContext.Provider>
   );
 }
 
@@ -285,7 +296,7 @@ function CameraRoute() {
     upload,
     captureLivePhoto,
     signOut,
-  } = rootRoute.useRouteContext();
+  } = useAppState();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -442,7 +453,7 @@ function CameraRoute() {
 
 function GalleryRoute() {
   const { session, tab, photos, personalPhotos, visiblePhotos, setSession, setTab, removePhoto } =
-    rootRoute.useRouteContext();
+    useAppState();
   const navigate = useNavigate();
 
   if (!session) {
@@ -479,7 +490,7 @@ function GalleryRoute() {
 
 function PhotoDetailRoute() {
   const { photoId } = photoRoute.useParams();
-  const { session, photos, setSession, removePhoto } = rootRoute.useRouteContext();
+  const { session, photos, setSession, removePhoto } = useAppState();
   const navigate = useNavigate();
   const photo = photos.find((item) => item.id === photoId) ?? null;
 
