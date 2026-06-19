@@ -616,21 +616,21 @@ function GalleryView({
 }) {
   return (
     <main className="min-h-screen overflow-y-auto bg-stone-100 p-4 text-stone-950 md:p-8">
-      <header className="mx-auto mb-6 flex w-full max-w-6xl items-center justify-between gap-4">
+      <header className="mx-auto mb-8 flex w-full max-w-6xl items-center justify-between gap-4">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.16em] text-stone-500">
             Wedding roll
           </p>
-          <h1 className="font-serif text-5xl leading-none md:text-7xl">Gallery</h1>
+          <h1 className="font-serif text-4xl leading-none md:text-6xl">Gallery</h1>
         </div>
-        <Button type="button" onClick={onBack}>
+        <Button className="shadow-none" type="button" onClick={onBack}>
           Camera
         </Button>
       </header>
 
-      <section className="mx-auto w-full max-w-6xl rounded-[28px] border border-stone-200 bg-white p-4 shadow-sm md:p-6">
+      <section className="mx-auto w-full max-w-6xl">
         <Tabs value={tab} onValueChange={(value) => onTabChange(value as Tab)}>
-          <TabsList className="mb-6 max-w-sm">
+          <TabsList className="mb-6 max-w-sm rounded-full bg-white p-1 shadow-none">
             <TabsTrigger value="all">All {allCount}</TabsTrigger>
             <TabsTrigger value="personal">Yours {personalCount}</TabsTrigger>
           </TabsList>
@@ -640,7 +640,7 @@ function GalleryView({
           <AnimatePresence initial={false}>
             {photos.length === 0 ? (
               <motion.div
-                className="col-span-full grid min-h-64 place-items-center rounded-3xl border border-dashed border-stone-300 p-8 text-center font-serif text-3xl font-black text-stone-950/50"
+                className="col-span-full grid min-h-64 place-items-center border border-dashed border-stone-300 p-8 text-center font-serif text-3xl font-black text-stone-950/50"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -670,7 +670,7 @@ function PolaroidCard({
 }) {
   return (
     <motion.article
-      className="touch-pan-y rounded-md bg-amber-50 p-2 pb-4 text-stone-950 shadow-md"
+      className="touch-pan-y bg-amber-50 p-2 pb-4 text-stone-950 shadow-sm ring-1 ring-stone-200/80"
       layout
       drag={photo.isMine ? "x" : false}
       dragConstraints={{ left: 0, right: 0 }}
