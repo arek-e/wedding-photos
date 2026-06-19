@@ -1,9 +1,24 @@
 import { AnimatePresence, motion } from "motion/react";
 import QRCode from "qrcode";
-import { ViewTransition, startTransition, useEffect, useRef, useState } from "react";
+import {
+  ViewTransition,
+  startTransition,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { Schema } from "effect";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Popover } from "@base-ui/react/popover";
+import {
+  Outlet,
+  RouterProvider,
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  useNavigate,
+} from "@tanstack/react-router";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import {
@@ -26,7 +41,65 @@ import {
 } from "../shared/api";
 
 type Tab = "all" | "personal";
-type View = "camera" | "gallery" | "detail";
+type AppRouterContext = {
+  session: Session | null;
+  tab: Tab;
+  photos: ReadonlyArray<GalleryPhoto>;
+  personalPhotos: ReadonlyArray<GalleryPhoto>;
+  visiblePhotos: ReadonlyArray<GalleryPhoto>;
+  remaining: number;
+  busy: boolean;
+  error: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  uploadInputRef: RefObject<HTMLInputElement | null>;
+  videoRef: RefObject<HTMLVideoElement | null>;
+  streamRef: RefObject<MediaStream | null>;
+  setTab: (tab: Tab) => void;
+  setSession: (session: Session) => void;
+  setError: (error: string) => void;
+  upload: (files: FileList | null) => Promise<void>;
+  captureLivePhoto: () => Promise<void>;
+  removePhoto: (photo: GalleryPhoto) => Promise<void>;
+  signOut: () => Promise<void>;
+};
+
+const rootRoute = createRootRouteWithContext<AppRouterContext>()({
+  component: () => <Outlet />,
+});
+
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: CameraRoute,
+});
+
+const galleryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/gallery",
+  component: GalleryRoute,
+});
+
+const photoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/photos/$photoId",
+  component: PhotoDetailRoute,
+});
+
+const adminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin",
+  component: Admin,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, galleryRoute, photoRoute, adminRoute]);
+
+const router = createRouter({ routeTree, context: undefined! as AppRouterContext });
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
+}
 
 const requestJson = async <A, I>(
   schema: Schema.Schema<A, I, never>,
@@ -44,8 +117,6 @@ const queryCode = () => new URLSearchParams(window.location.search).get("code") 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [tab, setTab] = useState<Tab>("all");
-  const [view, setView] = useState<View>("camera");
-  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -56,10 +127,6 @@ export function App() {
     q.from({ photo: galleryCollection }).select(({ photo }) => photo),
   );
 
-  if (window.location.pathname === "/admin") {
-    return <Admin />;
-  }
-
   const remaining = session?.remaining ?? session?.maxPhotos ?? 20;
   const personalPhotos = [...photos]
     .filter((photo) => photo.isMine)
@@ -67,14 +134,6 @@ export function App() {
   const visiblePhotos = [
     ...(tab === "personal" ? photos.filter((photo) => photo.isMine) : photos),
   ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-  const selectedPhoto = photos.find((photo) => photo.id === selectedPhotoId) ?? null;
-
-  const goToView = (nextView: View, photoId?: string) => {
-    startTransition(() => {
-      if (photoId !== undefined) setSelectedPhotoId(photoId);
-      setView(nextView);
-    });
-  };
 
   const refresh = async () => {
     const [{ photos: nextPhotos }, nextSession] = await Promise.all([
@@ -96,31 +155,6 @@ export function App() {
       })
       .catch((caught: Error) => setError(caught.message));
   }, []);
-
-  useEffect(() => {
-    if (!session?.guest || view !== "camera" || !navigator.mediaDevices?.getUserMedia) return;
-    let cancelled = false;
-
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
-      .then((stream) => {
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
-      })
-      .catch(() => {
-        streamRef.current = null;
-      });
-
-    return () => {
-      cancelled = true;
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    };
-  }, [session?.guest?.id, view]);
 
   const reconcileUploads = async () => {
     for (const delay of [900, 1500, 2500, 4000]) {
@@ -202,6 +236,83 @@ export function App() {
     }
   };
 
+  const signOut = async () => {
+    await requestJson(OkResponse, "/api/logout", { method: "POST" });
+    setSession({ guest: null, eventCode: queryCode(), maxPhotos: 20 });
+  };
+
+  return (
+    <RouterProvider
+      router={router}
+      context={{
+        session,
+        tab,
+        photos,
+        personalPhotos,
+        visiblePhotos,
+        remaining,
+        busy,
+        error,
+        inputRef,
+        uploadInputRef,
+        videoRef,
+        streamRef,
+        setTab,
+        setSession,
+        setError,
+        upload,
+        captureLivePhoto,
+        removePhoto,
+        signOut,
+      }}
+    />
+  );
+}
+
+function CameraRoute() {
+  const {
+    session,
+    remaining,
+    personalPhotos,
+    busy,
+    error,
+    inputRef,
+    uploadInputRef,
+    videoRef,
+    streamRef,
+    setSession,
+    setError,
+    upload,
+    captureLivePhoto,
+    signOut,
+  } = rootRoute.useRouteContext();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!session?.guest || !navigator.mediaDevices?.getUserMedia) return;
+    let cancelled = false;
+
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      })
+      .catch(() => {
+        streamRef.current = null;
+      });
+
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    };
+  }, [session?.guest, streamRef, videoRef]);
+
   if (!session) {
     return (
       <main className="grid min-h-screen place-items-center bg-stone-950 text-amber-50">
@@ -212,35 +323,6 @@ export function App() {
 
   if (!session.guest) {
     return <Login initialCode={session.eventCode || queryCode()} onLogin={setSession} />;
-  }
-
-  if (view === "gallery") {
-    return (
-      <ViewTransition name="gallery-view">
-        <GalleryView
-          tab={tab}
-          photos={visiblePhotos}
-          allCount={photos.length}
-          personalCount={personalPhotos.length}
-          onBack={() => goToView("camera")}
-          onOpenPhoto={(photo) => goToView("detail", photo.id)}
-          onRemove={removePhoto}
-          onTabChange={setTab}
-        />
-      </ViewTransition>
-    );
-  }
-
-  if (view === "detail" && selectedPhoto) {
-    return (
-      <ViewTransition name="detail-view">
-        <PhotoDetailView
-          photo={selectedPhoto}
-          onBack={() => goToView("gallery")}
-          onRemove={removePhoto}
-        />
-      </ViewTransition>
-    );
   }
 
   return (
@@ -257,13 +339,7 @@ export function App() {
           <div className="absolute inset-0 bg-black/25" />
           <header className="z-10 grid grid-cols-[1fr_auto] items-center gap-4 p-4 md:grid-cols-[1fr_auto_1fr] md:p-6">
             <div />
-            <UserMenu
-              name={session.guest.name}
-              onSignOut={async () => {
-                await requestJson(OkResponse, "/api/logout", { method: "POST" });
-                setSession({ guest: null, eventCode: queryCode(), maxPhotos: 20 });
-              }}
-            />
+            <UserMenu name={session.guest.name} onSignOut={signOut} />
           </header>
 
           <div className="pointer-events-none absolute inset-[18%_10%_34%] border border-white/20 md:inset-[22%_22%_28%]">
@@ -350,19 +426,98 @@ export function App() {
               </Button>
             </motion.div>
 
-            <Button
-              className="size-16 justify-self-end rounded-full border border-white/20 bg-stone-950 p-0 text-[0.68rem] uppercase tracking-wide text-white shadow-lg md:size-20"
-              type="button"
-              onClick={() => goToView("gallery")}
-            >
-              Gallery
-            </Button>
+            <GalleryStackButton
+              photos={personalPhotos}
+              onClick={() => startTransition(() => void navigate({ to: "/gallery" }))}
+            />
           </footer>
         </section>
         <AnimatePresence>
           {error ? <Toast message={error} onClose={() => setError("")} /> : null}
         </AnimatePresence>
       </main>
+    </ViewTransition>
+  );
+}
+
+function GalleryRoute() {
+  const { session, tab, photos, personalPhotos, visiblePhotos, setSession, setTab, removePhoto } =
+    rootRoute.useRouteContext();
+  const navigate = useNavigate();
+
+  if (!session) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-stone-950 text-amber-50">
+        Loading gallery...
+      </main>
+    );
+  }
+
+  if (!session.guest) {
+    return <Login initialCode={session.eventCode || queryCode()} onLogin={setSession} />;
+  }
+
+  return (
+    <ViewTransition name="gallery-view">
+      <GalleryView
+        tab={tab}
+        photos={visiblePhotos}
+        allCount={photos.length}
+        personalCount={personalPhotos.length}
+        onBack={() => startTransition(() => void navigate({ to: "/" }))}
+        onOpenPhoto={(photo) =>
+          startTransition(
+            () => void navigate({ to: "/photos/$photoId", params: { photoId: photo.id } }),
+          )
+        }
+        onRemove={removePhoto}
+        onTabChange={setTab}
+      />
+    </ViewTransition>
+  );
+}
+
+function PhotoDetailRoute() {
+  const { photoId } = photoRoute.useParams();
+  const { session, photos, setSession, removePhoto } = rootRoute.useRouteContext();
+  const navigate = useNavigate();
+  const photo = photos.find((item) => item.id === photoId) ?? null;
+
+  if (!session) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-stone-950 text-amber-50">
+        Loading photo...
+      </main>
+    );
+  }
+
+  if (!session.guest) {
+    return <Login initialCode={session.eventCode || queryCode()} onLogin={setSession} />;
+  }
+
+  if (!photo) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-stone-950 p-6 text-center text-white">
+        <div className="grid gap-4">
+          <p className="font-serif text-4xl">Photo not found.</p>
+          <Button
+            type="button"
+            onClick={() => startTransition(() => void navigate({ to: "/gallery" }))}
+          >
+            Gallery
+          </Button>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <ViewTransition name="detail-view">
+      <PhotoDetailView
+        photo={photo}
+        onBack={() => startTransition(() => void navigate({ to: "/gallery" }))}
+        onRemove={removePhoto}
+      />
     </ViewTransition>
   );
 }
@@ -633,6 +788,46 @@ function UserMenu({ name, onSignOut }: { name: string; onSignOut: () => Promise<
   );
 }
 
+function GalleryStackButton({
+  photos,
+  onClick,
+}: {
+  photos: ReadonlyArray<GalleryPhoto>;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="relative h-20 w-16 justify-self-end text-left md:h-24 md:w-20"
+      type="button"
+      onClick={onClick}
+      aria-label="Open gallery"
+    >
+      {photos.length > 0 ? (
+        photos.slice(0, 3).map((photo, index) => (
+          <span
+            className="absolute inset-0 rounded bg-amber-50 p-1 shadow-lg ring-1 ring-black/10"
+            key={photo.id}
+            style={{
+              transform: `translateY(${index * -5}px) rotate(${[-5, 3, -1][index] ?? 0}deg)`,
+              zIndex: 3 - index,
+            }}
+          >
+            <img
+              className="size-full rounded-sm object-cover"
+              src={photo.url}
+              alt={photo.filename}
+            />
+          </span>
+        ))
+      ) : (
+        <span className="grid size-full place-items-center rounded-full border border-white/20 bg-stone-950 text-[0.62rem] font-black uppercase text-white shadow-lg">
+          Gallery
+        </span>
+      )}
+    </button>
+  );
+}
+
 function GalleryView({
   tab,
   photos,
@@ -757,33 +952,11 @@ function PhotoDetailView({
   onRemove: (photo: GalleryPhoto) => void;
 }) {
   return (
-    <main className="min-h-screen bg-stone-950 p-4 text-white md:p-8">
-      <header className="mx-auto mb-6 flex max-w-6xl items-center justify-between gap-4">
-        <Button
-          className="bg-white text-stone-950 shadow-none hover:bg-stone-100"
-          type="button"
-          onClick={onBack}
-        >
-          Gallery
-        </Button>
-        {photo.isMine ? (
-          <Button
-            className="bg-white text-red-700 shadow-none hover:bg-red-50"
-            type="button"
-            onClick={() => {
-              onRemove(photo);
-              onBack();
-            }}
-          >
-            Remove
-          </Button>
-        ) : null}
-      </header>
-
+    <main className="min-h-screen bg-stone-950 p-4 pb-28 text-white md:p-8 md:pb-32">
       <section className="mx-auto grid max-w-6xl gap-5 md:grid-cols-[1fr_280px] md:items-start">
         <ViewTransition name={`photo-${photo.id}`}>
           <img
-            className="max-h-[78vh] w-full bg-black object-contain"
+            className="max-h-[74vh] w-full bg-black object-contain md:max-h-[82vh]"
             src={photo.url}
             alt={photo.filename}
           />
@@ -794,6 +967,32 @@ function PhotoDetailView({
           <p className="break-all text-sm font-bold text-white/55">{photo.filename}</p>
         </aside>
       </section>
+
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-stone-950/95 p-4 backdrop-blur md:p-5">
+        <div className="mx-auto grid max-w-6xl grid-cols-2 gap-3">
+          <Button
+            className="h-14 bg-white text-stone-950 shadow-none hover:bg-stone-100"
+            type="button"
+            onClick={onBack}
+          >
+            Gallery
+          </Button>
+          {photo.isMine ? (
+            <Button
+              className="h-14 bg-white text-red-700 shadow-none hover:bg-red-50"
+              type="button"
+              onClick={() => {
+                onRemove(photo);
+                onBack();
+              }}
+            >
+              Remove
+            </Button>
+          ) : (
+            <div />
+          )}
+        </div>
+      </nav>
     </main>
   );
 }

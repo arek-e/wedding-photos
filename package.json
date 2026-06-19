@@ -19,6 +19,7 @@
     "@effect/platform": "latest",
     "@tanstack/db": "^0.6.9",
     "@tanstack/react-db": "^0.1.87",
+    "@tanstack/react-router": "^1.170.16",
     "clsx": "^2.1.1",
     "drizzle-orm": "latest",
     "effect": "latest",
