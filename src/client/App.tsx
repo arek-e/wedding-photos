@@ -582,11 +582,6 @@ function PhotoStack({
               src={photo.url}
               alt={photo.filename}
             />
-            {photo.uploadState === "pending" ? (
-              <span className="absolute bottom-2 left-2 text-[0.62rem] font-black uppercase tracking-wide text-stone-950/55">
-                Saving
-              </span>
-            ) : null}
           </motion.span>
         ))
       )}
@@ -690,11 +685,7 @@ function PolaroidCard({
       <footer className="grid gap-0.5 px-0.5 pt-2 font-serif">
         <span className="truncate font-black">{photo.guestName}</span>
         <small className="text-[0.68rem] font-black uppercase text-stone-950/55">
-          {photo.uploadState === "pending"
-            ? "Saving"
-            : photo.isMine
-              ? "Swipe to toss"
-              : "Guest roll"}
+          {photo.isMine ? "Swipe to toss" : "Guest roll"}
         </small>
       </footer>
     </motion.article>
