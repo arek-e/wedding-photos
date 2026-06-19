@@ -1,17 +1,18 @@
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect } from "effect";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { nanoid } from "nanoid";
-import { guests, photos, type Guest, type Photo } from "./db/schema";
+import { events, guests, photos, type Event, type Guest, type Photo } from "./db/schema";
 
 type Env = {
   Bindings: {
     ASSETS: Fetcher;
     DB: D1Database;
     PHOTOS: R2Bucket;
-    EVENT_CODE: string;
+    ADMIN_PIN?: string;
+    EVENT_CODE?: string;
     SESSION_SECRET: string;
   };
 };
@@ -22,7 +23,7 @@ const MAX_PHOTOS_PER_GUEST = 20;
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const SESSION_COOKIE = "wedding_guest";
 
-type GuestSession = { guestId: string; phone: string };
+type GuestSession = { guestId: string; eventId: string; phone: string };
 type GalleryPhoto = Photo & { guestName: string; isMine: boolean };
 
 class AppError extends Error {
@@ -37,6 +38,11 @@ class AppError extends Error {
 const run = <A>(effect: Effect.Effect<A, unknown, never>) => Effect.runPromise(effect);
 
 const normalizePhone = (phone: string) => phone.replace(/[^0-9+]/g, "").trim();
+const normalizeCode = (code: string) =>
+  code
+    .replace(/[^a-zA-Z0-9-]/g, "")
+    .toUpperCase()
+    .trim();
 
 const toHex = (buffer: ArrayBuffer) =>
   [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -53,7 +59,9 @@ const sign = async (value: string, secret: string) => {
 };
 
 const makeSession = async (guest: Guest, secret: string) => {
-  const payload = btoa(JSON.stringify({ guestId: guest.id, phone: guest.phone }));
+  const payload = btoa(
+    JSON.stringify({ guestId: guest.id, eventId: guest.eventId, phone: guest.phone }),
+  );
   return `${payload}.${await sign(payload, secret)}`;
 };
 
@@ -66,15 +74,26 @@ const readSession = async (
   if (!payload || !signature || (await sign(payload, secret)) !== signature) return null;
 
   try {
-    const parsed = JSON.parse(atob(payload)) as { guestId?: string; phone?: string };
-    if (!parsed.guestId || !parsed.phone) return null;
-    return { guestId: parsed.guestId, phone: parsed.phone };
+    const parsed = JSON.parse(atob(payload)) as {
+      guestId?: string;
+      eventId?: string;
+      phone?: string;
+    };
+    if (!parsed.guestId || !parsed.eventId || !parsed.phone) return null;
+    return { guestId: parsed.guestId, eventId: parsed.eventId, phone: parsed.phone };
   } catch {
     return null;
   }
 };
 
 const jsonError = (message: string, status = 400) => Response.json({ error: message }, { status });
+
+const joinUrl = (requestUrl: string, code: string) => {
+  const url = new URL(requestUrl);
+  url.pathname = "/";
+  url.search = new URLSearchParams({ code }).toString();
+  return url.toString();
+};
 
 const getCurrentGuest = (env: Env["Bindings"], cookie: string | undefined) =>
   Effect.tryPromise({
@@ -95,20 +114,32 @@ const requireGuest = async (env: Env["Bindings"], cookie: string | undefined) =>
   return guest;
 };
 
-const findOrCreateGuest = (env: Env["Bindings"], input: { name: string; phone: string }) =>
+const findOrCreateGuest = (
+  env: Env["Bindings"],
+  input: { code: string; name: string; phone: string },
+) =>
   Effect.tryPromise({
     try: async () => {
       const db = drizzle(env.DB);
       const phone = normalizePhone(input.phone);
       const name = input.name.trim();
+      const code = normalizeCode(input.code);
 
       if (name.length < 2) throw new AppError("Please enter your name.");
       if (phone.length < 7) throw new AppError("Please enter a valid phone number.");
+      if (code.length < 3) throw new AppError("Please enter a room code.");
 
-      const [existing] = await db.select().from(guests).where(eq(guests.phone, phone)).limit(1);
+      const [event] = await db.select().from(events).where(eq(events.code, code)).limit(1);
+      if (!event) throw new AppError("That room code does not match any wedding room.", 401);
+
+      const [existing] = await db
+        .select()
+        .from(guests)
+        .where(and(eq(guests.eventId, event.id), eq(guests.phone, phone)))
+        .limit(1);
       if (existing) return existing;
 
-      const guest: Guest = { id: nanoid(), name, phone, createdAt: new Date() };
+      const guest: Guest = { id: nanoid(), eventId: event.id, name, phone, createdAt: new Date() };
       await db.insert(guests).values(guest);
       return guest;
     },
@@ -118,7 +149,7 @@ const findOrCreateGuest = (env: Env["Bindings"], input: { name: string; phone: s
 
 const listGallery = (
   env: Env["Bindings"],
-  guestId: string,
+  guest: Guest,
 ): Effect.Effect<GalleryPhoto[], AppError, never> =>
   Effect.tryPromise({
     try: async () => {
@@ -136,11 +167,38 @@ const listGallery = (
         })
         .from(photos)
         .innerJoin(guests, eq(photos.guestId, guests.id))
+        .where(eq(guests.eventId, guest.eventId))
         .orderBy(desc(photos.createdAt));
 
-      return rows.map((photo) => ({ ...photo, isMine: photo.guestId === guestId }));
+      return rows.map((photo) => ({ ...photo, isMine: photo.guestId === guest.id }));
     },
     catch: () => new AppError("Could not load gallery.", 500),
+  });
+
+const createEvent = (
+  env: Env["Bindings"],
+  input: { name: string; code: string },
+): Effect.Effect<Event, AppError, never> =>
+  Effect.tryPromise({
+    try: async () => {
+      const db = drizzle(env.DB);
+      const name = input.name.trim();
+      const code = normalizeCode(input.code || name);
+
+      if (name.length < 2) throw new AppError("Please enter an event name.");
+      if (code.length < 3)
+        throw new AppError("Please enter a room code with at least 3 characters.");
+
+      const event: Event = { id: nanoid(), name, code, createdAt: new Date() };
+      await db.insert(events).values(event);
+      return event;
+    },
+    catch: (error) => {
+      if (error instanceof AppError) return error;
+      if (error instanceof Error && error.message.includes("UNIQUE"))
+        return new AppError("That room code is already used.");
+      return new AppError("Could not create room.", 500);
+    },
   });
 
 const countGuestPhotos = (
@@ -214,7 +272,7 @@ app.get("/api/session", async (c) => {
   if (!guest) {
     return c.json({
       guest: null,
-      eventCode: c.req.query("code") ?? "",
+      eventCode: c.req.query("code") ?? c.env.EVENT_CODE ?? "",
       maxPhotos: MAX_PHOTOS_PER_GUEST,
     });
   }
@@ -222,7 +280,7 @@ app.get("/api/session", async (c) => {
   const uploaded = await run(countGuestPhotos(c.env, guest.id));
   return c.json({
     guest: { id: guest.id, name: guest.name, phone: guest.phone },
-    eventCode: c.env.EVENT_CODE,
+    eventCode: c.req.query("code") ?? "",
     maxPhotos: MAX_PHOTOS_PER_GUEST,
     remaining: Math.max(0, MAX_PHOTOS_PER_GUEST - uploaded),
   });
@@ -236,13 +294,10 @@ app.post("/api/login", async (c) => {
   };
   const code = String(input.code ?? "").trim();
 
-  if (code.toUpperCase() !== c.env.EVENT_CODE.toUpperCase()) {
-    return jsonError("That room code does not match this wedding.", 401);
-  }
-
   try {
     const guest = await run(
       findOrCreateGuest(c.env, {
+        code,
         name: String(input.name ?? ""),
         phone: String(input.phone ?? ""),
       }),
@@ -265,11 +320,32 @@ app.get("/api/gallery", async (c) => {
   try {
     const guest = await requireGuest(c.env, getCookie(c, SESSION_COOKIE));
     const scope = c.req.query("scope") === "personal" ? "personal" : "all";
-    const gallery = await run(listGallery(c.env, guest.id));
+    const gallery = await run(listGallery(c.env, guest));
     const scoped = scope === "personal" ? gallery.filter((photo) => photo.isMine) : gallery;
     return c.json({ photos: scoped.map(serializePhoto) });
   } catch (error) {
     const appError = error instanceof AppError ? error : new AppError("Could not load gallery.");
+    return jsonError(appError.message, appError.status);
+  }
+});
+
+app.post("/api/admin/events", async (c) => {
+  const input = (await c.req.json().catch(() => ({}))) as {
+    adminPin?: string;
+    name?: string;
+    code?: string;
+  };
+  if (!c.env.ADMIN_PIN || input.adminPin !== c.env.ADMIN_PIN) {
+    return jsonError("Admin PIN is required.", 401);
+  }
+
+  try {
+    const event = await run(
+      createEvent(c.env, { name: String(input.name ?? ""), code: String(input.code ?? "") }),
+    );
+    return c.json({ event, joinUrl: joinUrl(c.req.url, event.code) });
+  } catch (error) {
+    const appError = error instanceof AppError ? error : new AppError("Could not create room.");
     return jsonError(appError.message, appError.status);
   }
 });

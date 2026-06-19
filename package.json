@@ -8,28 +8,35 @@
     "deploy": "vp build && wrangler deploy",
     "types": "wrangler types",
     "db:generate": "bun ./node_modules/drizzle-kit/bin.cjs generate",
-    "db:migrate:local": "wrangler d1 migrations apply wedding_photos --local",
-    "db:migrate:remote": "wrangler d1 migrations apply wedding_photos --remote",
+    "db:migrate:local": "wrangler d1 migrations apply wedding_photos_rooms --local",
+    "db:migrate:remote": "wrangler d1 migrations apply wedding_photos_rooms --remote",
     "check": "vp check",
     "typecheck": "bun ./node_modules/typescript/bin/tsc --noEmit",
     "build": "vp build"
   },
   "dependencies": {
+    "@base-ui/react": "^1.6.0",
     "@effect/platform": "latest",
+    "clsx": "^2.1.1",
     "drizzle-orm": "latest",
     "effect": "latest",
     "hono": "latest",
     "motion": "^12.40.0",
     "nanoid": "latest",
+    "qrcode": "^1.5.4",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
+    "@tailwindcss/vite": "^4.3.1",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "drizzle-kit": "latest",
+    "tailwindcss": "^4.3.1",
     "typescript": "latest",
     "vite-plus": "^0.2.1",
     "wrangler": "latest"

@@ -9,14 +9,10 @@ not_found_handling = "single-page-application"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "wedding_photos"
-database_id = "replace-with-cloudflare-d1-database-id"
+database_name = "wedding_photos_rooms"
+database_id = "de10f776-3471-47ed-a51d-8cd4c31710f3"
 migrations_dir = "drizzle"
 
 [[r2_buckets]]
 binding = "PHOTOS"
 bucket_name = "wedding-photos"
-
-[vars]
-EVENT_CODE = "WEDDING"
-SESSION_SECRET = "change-this-before-deploy"

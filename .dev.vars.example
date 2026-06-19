@@ -1,2 +1,2 @@
-EVENT_CODE="WEDDING"
 SESSION_SECRET="replace-with-a-long-random-secret"
+ADMIN_PIN="replace-with-an-admin-pin"
