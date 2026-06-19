@@ -1,0 +1,27 @@
+{
+  "name": "wedding-photos",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "db:generate": "bun ./node_modules/drizzle-kit/bin.cjs generate",
+    "db:migrate:local": "wrangler d1 migrations apply wedding_photos --local",
+    "db:migrate:remote": "wrangler d1 migrations apply wedding_photos --remote",
+    "check": "bun ./node_modules/typescript/bin/tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform": "latest",
+    "drizzle-orm": "latest",
+    "effect": "latest",
+    "hono": "latest",
+    "nanoid": "latest"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "drizzle-kit": "latest",
+    "typescript": "latest",
+    "wrangler": "latest"
+  }
+}
